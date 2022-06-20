@@ -1,0 +1,293 @@
+#!/usr/bin/env bash
+#
+# Seeqie - sixel based image viewer
+#
+# This script is licensed under an MIT license, see /LICENSE.md for details
+#
+SIXELOPTS="-d fs"
+
+get_window_size() {
+	printf '%b' '\e[14t'
+	IFS=';t' read -d t -t 0.1 -sra window_size;
+	unset IFS
+	window_height="${window_size[1]}"
+	window_width="${window_size[2]}"
+	window_cols=`tput cols`
+	window_lines=`tput lines`
+	window_glyph_width=$(( $window_width/$window_cols ))
+	window_glyph_height=$(( $window_height/$window_lines ))
+	thumbs_per_line=$(( window_width / (window_glyph_width * 26) ))
+	thumbs_per_screen=$(( thumbs_per_line * (window_lines / 10) ))
+}
+
+get_output_size() {
+	iar=$((($1*65536) / $2))
+	war=$((($3*65536) / $4))
+	if [ $war -gt $iar ]
+	then
+		output_height=$4
+		output_width=$(( ($4 * $iar) / 65536))
+	else
+		output_width=$3
+		output_height=$(( ($3*65536) / $iar))
+	fi
+}
+
+show_full_image() {
+	if [ $cur_sel -eq $last_sel ]; then  return; fi
+	raws=${image_sizes["$1"]}
+	clear_screen
+	show_status
+	image_width=${raws%%x*}
+	image_height=${raws##*x}
+	get_output_size $image_width $image_height $window_width $window_height
+	offx=$(( (($window_width - $output_width) / $window_glyph_width) / 2 ))
+	echo -ne "\033[1;$(( offx ))H"
+	gm convert "$1" -thumbnail "$output_width"x"$output_height" BMP:- | img2sixel $SIXELOPTS
+	last_sel=$cur_sel
+}
+
+show_status() {
+	echo -ne "\033[1;0H\033[42;1;37m"
+	tmax_sel=$(( max_sel - 1 ))
+	inpstr=`echo -n "$last_input" | xxd -c 256 -ps -u | sed -r -e 's/../& /g'`
+	case "$cur_mode" in
+		1)
+			echo " [$cur_sel/$tmax_sel] Single | $PWD | $image_width x $image_height $inpstr          ";;
+		2)
+			echo " [$cur_sel/$tmax_sel] Gallery | $PWD $inpstr          ";;
+	esac
+	echo -ne "\033[40;0;30m"
+}
+
+center() {
+	str=$1
+	padding="$(printf '%0.1s' \ {1..500})"
+	if [ ${#str} -gt 24 ]; then
+		printf '%25.25s' "$str"
+	else
+		printf '%*.*s %s %*.*s' 0 "$(((24-${#1})/2))" "$padding" "$str" 0 "$(((25-${#1})/2))" "$padding"
+	fi
+}
+
+render_thumb_image() {
+	raws=${image_sizes["$1"]}
+	image_width=${raws%%x*}
+	image_height=${raws##*x}
+	get_output_size $image_width $image_height $(( $window_glyph_width * 24 )) $(( $window_glyph_height * 8 ))
+	sixel_thumb_widths["$1"]=$output_width
+	sixel_thumb_heights["$1"]=$output_height
+}
+
+show_thumb_image() {
+	if [ $cur_row -gt $(($window_lines - 10)) ]; then
+		return
+	fi
+	if [ $cur_row -lt 0 ]; then
+		cur_col=$(( cur_col + 26 ))
+		if [ $cur_col -gt $(($window_cols - 26)) ]; then
+			cur_col=1
+			cur_row=$(( $cur_row + 10 ))
+		fi
+		return
+	fi
+
+	cur_width="${sixel_thumb_widths["$1"]}"
+	cur_height="${sixel_thumb_heights["$1"]}"
+
+	offx=$cur_col
+	offy=$cur_row
+	if [ $cur_width -lt $cur_height ]; then
+		offx=$(( offx + (((cur_height - cur_width) / window_glyph_width ) / 2)))
+	else
+		offy=$(( offy + (((cur_width - cur_height) / window_glyph_height  ) / 2)))
+	fi
+	offy=$(( offy + 1 ))
+
+	echo -ne "\033[$offy;$(( $offx ))H"
+	if [ $last_scroll -ne $cur_scroll ]; then
+		if [ -z ${sixel_thumbs[$1]} ]; then
+			sixel_thumbs["$1"]=`gm convert "$1" -thumbnail "$cur_width"x"$cur_height" BMP:- | img2sixel $SIXELOPTS`
+		fi
+		echo "${sixel_thumbs["$1"]}"
+	fi
+
+	if [ $cur_sel -eq $2 ]; then
+		echo -ne "\033[42;1;37m"
+	fi
+	echo -ne "\033[$(( $cur_row + 9 ));$(( $cur_col - 1 ))H"
+	center "$1"
+	echo -ne "\033[40;0;30m"
+
+	cur_col=$(( cur_col + 26 ))
+	if [ $cur_col -gt $(($window_cols - 26)) ]; then
+		cur_col=1
+		cur_row=$(( $cur_row + 10 ))
+	fi
+}
+
+read_input() {
+	input=""
+	read -p "" -sn 1 input
+	buf="$input"
+	while read -t 0; do
+		read -p "" -sn 1 input
+		buf="$buf$input"
+	done
+	parse_input $buf
+}
+
+last_input=""
+parse_input() {
+	last_scroll=$cur_scroll
+	last_input="$1"
+	case "$last_input" in
+		[aAhH]|$'\x1B\x5B\x44')
+			cur_sel=$(( cur_sel - 1 ));;
+		[dDlL]|$'\x1B\x5B\x43')
+			cur_sel=$(( cur_sel + 1 ));;
+		[wWkK]|$'\x1B\x5B\x41')
+			cur_sel=$((cur_sel - thumbs_per_line));
+			if [ $cur_sel -lt 0 ]; then cur_sel=$((cur_sel + thumbs_per_line)); fi;;
+		[sSjJ]|$'\x1B\x5B\x42')
+			cur_sel=$((cur_sel + thumbs_per_line));
+			if [ $cur_sel -gt $(( max_sel - 1 )) ]; then cur_sel=$((cur_sel - thumbs_per_line)); fi;;
+		'0'|$'\x1B\x5B\x48')
+			cur_sel=0;;
+		'$'|$'\x1B\x5B\x46')
+			cur_sel=$(( max_sel - 1 ));;
+		'')
+			if [ $cur_mode -eq 1 ]; then
+				cur_mode=2;
+				clear_screen;
+				last_scroll=999999;
+			else
+				cur_mode=1;
+				last_sel=999999
+			fi;;
+		[qQ])
+			cur_mode=0;;
+		$'\x1B')
+			if [ $cur_mode -eq 2 ]; then
+				cur_mode=0;
+			else
+				cur_mode=2;
+				clear_screen;
+				last_scroll=999999;
+			fi;;
+	esac
+	if [ $cur_sel -lt 1 ]; then cur_sel=0; fi
+	if [ $cur_sel -gt $(( max_sel - 1 )) ]; then cur_sel=$(( max_sel - 1 )); fi
+	if [ $cur_scroll -lt 0 ]; then cur_scroll=0; fi
+
+	abs_cur_sel=$((cur_scroll * thumbs_per_line))
+	abs_cur_sel_max=$((abs_cur_sel + thumbs_per_screen))
+	while [ $cur_sel -lt $abs_cur_sel ]; do
+		cur_scroll=$(( cur_scroll - 1 ));
+		abs_cur_sel=$((cur_scroll * thumbs_per_line))
+		abs_cur_sel_max=$((abs_cur_sel + thumbs_per_screen))
+	done
+	while [ $cur_sel -ge $abs_cur_sel_max ]; do
+		cur_scroll=$(( cur_scroll + 1 ));
+		abs_cur_sel=$((cur_scroll * thumbs_per_line))
+		abs_cur_sel_max=$((abs_cur_sel + thumbs_per_screen))
+	done
+}
+
+last_sel=999999
+last_scroll=999999
+cur_scroll=0
+cur_mode=2
+cur_sel=0
+clear_screen() {
+	clear
+	cur_col=1
+	cur_row=$((1 + (cur_scroll * -10) ))
+}
+
+
+if ! [ -x "$(command -v img2sixel)" ]; then
+	echo "You need the img2sixel command most often found as part of your distros libsixel package"
+	exit
+fi
+if ! [ -x "$(command -v gm)" ]; then
+	echo "You need the gm command most often found as part of your distros GraphicsMagick package"
+	exit
+fi
+if ! [ -x "$(command -v tput)" ]; then
+	echo "You need the tput command most often found as part of your distros ncurses package"
+	exit
+fi
+if ! [ -x "$(command -v xxd)" ]; then
+	echo "You need the xxd command most often found as part of your distros vim package"
+	exit
+fi
+
+
+tput smcup
+tput clear
+tput civis
+get_window_size
+stty -icanon -echo
+
+clear_screen
+dir=$1
+if [ "$dir" == "" ];then
+	dir=$PWD
+fi
+
+show_status
+declare -A image_sizes
+declare -A sixel_thumbs
+declare -A sixel_thumb_widths
+declare -A sixel_thumb_heights
+max_sel=0
+
+cd $dir
+files=( *.{jpg,png,gif,bmp,webp} )
+
+for img in "${files[@]}"; do
+	if ! [ -e "$img" ]; then
+		continue
+	fi
+	i=`gm identify -format "%f=%Wx%H " "$img"`
+	file=${i%%=*}
+	size=${i##*=}
+	image_sizes["$file"]=$size
+	max_sel=$(( max_sel + 1 ))
+	render_thumb_image "$img"
+done
+
+show_status
+wait
+
+while [ $cur_mode -ne 0 ]; do
+	if [ $last_scroll -ne $cur_scroll ]; then
+		clear_screen
+	else
+		cur_col=1
+		cur_row=$((1 + (cur_scroll * -10) ))
+	fi
+	show_status
+	i=0
+	for img in "${files[@]}"; do
+		if ! [ -e "$img" ]; then
+			continue
+		fi		#
+		if [ $cur_mode -eq 1 ]; then
+			if [ $i -eq $cur_sel ]; then
+				show_full_image "$img" "$i"
+			fi
+		else
+			show_thumb_image "$img" "$i"
+		fi
+		i=$(( i + 1 ))
+	done
+	max_sel=$i
+	show_status
+	read_input
+done;
+stty echo
+tput clear
+tput cnorm
+tput rmcup
