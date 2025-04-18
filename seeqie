@@ -49,13 +49,14 @@ show_full_image() {
 
 show_status() {
 	echo -ne "\033[1;0H\033[42;1;37m"
-	tmax_sel=$(( max_sel - 1 ))
+	tmax_sel=$max_sel
+	display_cur_sel=$(( cur_sel + 1 ))
 	inpstr=`echo -n "$last_input" | xxd -c 256 -ps -u | sed -r -e 's/../& /g'`
 	case "$cur_mode" in
 		1)
-			echo " [$cur_sel/$tmax_sel] Single | $PWD | $image_width x $image_height $inpstr          ";;
+			echo " [$display_cur_sel/$tmax_sel] Single | $PWD | $image_width x $image_height $inpstr          ";;
 		2)
-			echo " [$cur_sel/$tmax_sel] Gallery | $PWD $inpstr          ";;
+			echo " [$display_cur_sel/$tmax_sel] Gallery | $PWD $inpstr          ";;
 	esac
 	echo -ne "\033[40;0;30m"
 }
@@ -95,13 +96,12 @@ show_thumb_image() {
 	cur_width="${sixel_thumb_widths["$1"]}"
 	cur_height="${sixel_thumb_heights["$1"]}"
 
+	# Base position
 	offx=$cur_col
 	offy=$cur_row
-	if [ $cur_width -lt $cur_height ]; then
-		offx=$(( offx + (((cur_height - cur_width) / window_glyph_width ) / 2)))
-	else
-		offy=$(( offy + (((cur_width - cur_height) / window_glyph_height  ) / 2)))
-	fi
+	
+	# Center the image within its allocated space
+	offx=$(( offx + 12 - (cur_width / window_glyph_width / 2) ))
 	offy=$(( offy + 1 ))
 
 	echo -ne "\033[$offy;$(( $offx ))H"
