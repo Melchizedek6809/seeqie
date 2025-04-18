@@ -114,6 +114,8 @@ show_thumb_image() {
 
 	if [ $cur_sel -eq $2 ]; then
 		echo -ne "\033[42;1;37m"
+	else
+		echo -ne "\033[40;1;37m"
 	fi
 	echo -ne "\033[$(( $cur_row + 9 ));$(( $cur_col - 1 ))H"
 	center "$1"
