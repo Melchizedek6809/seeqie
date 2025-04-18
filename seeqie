@@ -40,6 +40,10 @@ show_full_image() {
 	show_status
 	image_width=${raws%%x*}
 	image_height=${raws##*x}
+	if [ -z "$image_width" ] || [ -z "$image_height" ]; then
+		image_width=0
+		image_height=0
+	fi
 	get_output_size $image_width $image_height $window_width $window_height
 	offx=$(( (($window_width - $output_width) / $window_glyph_width) / 2 ))
 	echo -ne "\033[1;$(( offx ))H"
@@ -101,7 +105,9 @@ show_thumb_image() {
 	offy=$cur_row
 	
 	# Center the image within its allocated space
-	offx=$(( offx + 12 - (cur_width / window_glyph_width / 2) ))
+	if [ $window_glyph_width -ne 0 ]; then
+		offx=$(( offx + 12 - (cur_width / window_glyph_width / 2) ))
+	fi
 	offy=$(( offy + 1 ))
 
 	echo -ne "\033[$offy;$(( $offx ))H"
@@ -245,8 +251,17 @@ declare -A sixel_thumb_widths
 declare -A sixel_thumb_heights
 max_sel=0
 
-cd $dir
+cd "$dir"
 files=( *.{jpg,png,gif,bmp,webp} )
+
+# Check if directory is empty or no images found
+if [ ${#files[@]} -eq 1 ] && [ ! -e "${files[0]}" ]; then
+	echo "No supported image files found in $dir"
+	stty echo
+	tput cnorm
+	tput rmcup
+	exit 1
+fi
 
 for img in "${files[@]}"; do
 	if ! [ -e "$img" ]; then
@@ -261,7 +276,6 @@ for img in "${files[@]}"; do
 done
 
 show_status
-wait
 
 while [ $cur_mode -ne 0 ]; do
 	if [ $last_scroll -ne $cur_scroll ]; then
