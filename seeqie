@@ -47,7 +47,7 @@ show_full_image() {
 	get_output_size $image_width $image_height $window_width $window_height
 	offx=$(( (($window_width - $output_width) / $window_glyph_width) / 2 ))
 	echo -ne "\033[1;$(( offx ))H"
-	gm convert "$1" -thumbnail "$output_width"x"$output_height" BMP:- | img2sixel $SIXELOPTS
+	gm convert "$1" -thumbnail "$output_width"x"$output_height" -compress none BMP:- | img2sixel $SIXELOPTS
 	last_sel=$cur_sel
 }
 
@@ -58,11 +58,11 @@ show_status() {
 	inpstr=`echo -n "$last_input" | xxd -c 256 -ps -u | sed -r -e 's/../& /g'`
 	case "$cur_mode" in
 		1)
-			echo " [$display_cur_sel/$tmax_sel] Single | $PWD | $image_width x $image_height $inpstr          ";;
+			echo " [$display_cur_sel/$tmax_sel] Single | $PWD | $image_width x $image_height ";;
 		2)
-			echo " [$display_cur_sel/$tmax_sel] Gallery | $PWD $inpstr          ";;
+			echo " [$display_cur_sel/$tmax_sel] Gallery | $PWD ";;
 	esac
-	echo -ne "\033[40;0;30m"
+	echo -ne "\033[0m"
 }
 
 center() {
