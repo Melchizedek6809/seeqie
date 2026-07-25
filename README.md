@@ -2,6 +2,8 @@
 
 An image viewer for your (sixel capable) terminal.
 
+![Have a screenshot](/screenshot.jpg)
+
 This is the result of a weekend experiment where I was trying to figure out if
 one could build a simple image viewer using bash and img2sixel.  The result works
 suprisingly well and is something I use from time to time if I want to take a
