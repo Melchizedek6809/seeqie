@@ -47,7 +47,7 @@ show_full_image() {
 	get_output_size $image_width $image_height $window_width $window_height
 	offx=$(( (($window_width - $output_width) / $window_glyph_width) / 2 ))
 	echo -ne "\033[1;$(( offx ))H"
-	gm convert "$1" -thumbnail "$output_width"x"$output_height" -compress none BMP:- | img2sixel $SIXELOPTS
+	gm convert "$1[0]" -thumbnail "$output_width"x"$output_height" -compress none BMP:- | img2sixel $SIXELOPTS
 	last_sel=$cur_sel
 }
 
@@ -113,7 +113,7 @@ show_thumb_image() {
 	echo -ne "\033[$offy;$(( $offx ))H"
 	if [ $last_scroll -ne $cur_scroll ]; then
 		if [ -z ${sixel_thumbs[$1]} ]; then
-			sixel_thumbs["$1"]=`gm convert "$1" -thumbnail "$cur_width"x"$cur_height" BMP:- | img2sixel $SIXELOPTS`
+			sixel_thumbs["$1"]=`gm convert "$1[0]" -thumbnail "$cur_width"x"$cur_height" -compress none BMP:- | img2sixel $SIXELOPTS`
 		fi
 		echo "${sixel_thumbs["$1"]}"
 	fi
