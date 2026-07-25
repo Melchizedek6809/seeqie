@@ -267,9 +267,8 @@ for img in "${files[@]}"; do
 	if ! [ -e "$img" ]; then
 		continue
 	fi
-	i=`gm identify -format "%f=%Wx%H " "$img"`
-	file=${i%%=*}
-	size=${i##*=}
+	file=$(basename "$img")
+	size=$(gm identify -format "%Wx%H " "$img")
 	image_sizes["$file"]=$size
 	max_sel=$(( max_sel + 1 ))
 	render_thumb_image "$img"
