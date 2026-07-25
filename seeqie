@@ -47,7 +47,7 @@ show_full_image() {
 	get_output_size $image_width $image_height $window_width $window_height
 	offx=$(( (($window_width - $output_width) / $window_glyph_width) / 2 ))
 	echo -ne "\033[1;$(( offx ))H"
-	gm convert "$1[0]" -thumbnail "$output_width"x"$output_height" -compress none BMP:- | img2sixel $SIXELOPTS
+	$CONVERT "$1[0]" -thumbnail "$output_width"x"$output_height" -compress none BMP:- | img2sixel $SIXELOPTS
 	last_sel=$cur_sel
 }
 
@@ -113,7 +113,7 @@ show_thumb_image() {
 	echo -ne "\033[$offy;$(( $offx ))H"
 	if [ $last_scroll -ne $cur_scroll ]; then
 		if [ -z ${sixel_thumbs[$1]} ]; then
-			sixel_thumbs["$1"]=`gm convert "$1[0]" -thumbnail "$cur_width"x"$cur_height" -compress none BMP:- | img2sixel $SIXELOPTS`
+			sixel_thumbs["$1"]=`$CONVERT "$1[0]" -thumbnail "$cur_width"x"$cur_height" -compress none BMP:- | img2sixel $SIXELOPTS`
 		fi
 		echo "${sixel_thumbs["$1"]}"
 	fi
@@ -125,7 +125,7 @@ show_thumb_image() {
 	fi
 	echo -ne "\033[$(( $cur_row + 9 ));$(( $cur_col - 1 ))H"
 	center "$1"
-	echo -ne "\033[40;0;30m"
+	echo -ne "\033[0m"
 
 	cur_col=$(( cur_col + 26 ))
 	if [ $cur_col -gt $(($window_cols - 26)) ]; then
@@ -214,21 +214,30 @@ clear_screen() {
 }
 
 
-if ! [ -x "$(command -v img2sixel)" ]; then
-	echo "You need the img2sixel command most often found as part of your distros libsixel package"
-	exit
-fi
 if ! [ -x "$(command -v gm)" ]; then
-	echo "You need the gm command most often found as part of your distros GraphicsMagick package"
-	exit
+    if ! [ -x "$(command -v magick)" ]; then
+        echo "Could find neither GraphicsMagick or ImageMagick, please provide gm or convert/identify binaries" >&2
+        exit 1
+    else
+        CONVERT="magick"
+        IDENTIFY="magick identify"
+    fi
+else
+    CONVERT="gm convert"
+    IDENTIFY="gm identify"
+fi
+
+if ! [ -x "$(command -v img2sixel)" ]; then
+	echo "You need the img2sixel command most often found as part of your distros libsixel package" 
+	exit 1
 fi
 if ! [ -x "$(command -v tput)" ]; then
 	echo "You need the tput command most often found as part of your distros ncurses package"
-	exit
+	exit 1
 fi
 if ! [ -x "$(command -v xxd)" ]; then
 	echo "You need the xxd command most often found as part of your distros vim package"
-	exit
+	exit 1
 fi
 
 
@@ -268,7 +277,7 @@ for img in "${files[@]}"; do
 		continue
 	fi
 	file=$(basename "$img")
-	size=$(gm identify -format "%Wx%H " "$img")
+	size=$($IDENTIFY -format "%Wx%H " "$img")
 	image_sizes["$file"]=$size
 	max_sel=$(( max_sel + 1 ))
 	render_thumb_image "$img"
